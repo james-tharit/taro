@@ -1,10 +1,13 @@
 use std::{
+    fmt::Error,
     fs,
     io::{prelude::*, BufReader},
     net::{TcpListener, TcpStream},
     thread,
     time::Duration,
 };
+
+use threadpool::ThreadPool;
 
 const IP: &str = "127.0.0.1";
 const PORT: i32 = 7878;
@@ -37,11 +40,22 @@ fn handle_request(request_line: &str) -> (&str, &str) {
     return (&status_line, &filename);
 }
 
+fn middleware(content: &String) -> Result<String, Error> {
+    let modified_content = content.to_owned();
+    Ok(modified_content)
+}
+
 fn handle_connection(mut stream: TcpStream) {
     let buf_reader = BufReader::new(&mut stream);
+    // println!("New connection: {:?}", buf_reader);
     let request_line: String = buf_reader.lines().next().unwrap().unwrap();
 
     println!("Request: {request_line:#?}");
+
+    match middleware(&request_line) {
+        Ok(modified) => println!("Modified content: {}", modified),
+        Err(e) => eprintln!("Error: {}", e),
+    }
 
     let (status_line, filename) = handle_request(&request_line);
 
@@ -56,10 +70,16 @@ fn main() {
     let server_address = format!("{IP}:{PORT}");
     let listener = TcpListener::bind(&server_address).unwrap();
     println!("Server start at: {server_address}");
+
+    let pool = ThreadPool::new(4);
     for stream in listener.incoming() {
         let stream = stream.unwrap();
+        let current_thread = thread::current().id();
+        println!("{:?}", &current_thread);
 
-        handle_connection(stream);
+        pool.execute(|| {
+            handle_connection(stream);
+        });
     }
 }
 
